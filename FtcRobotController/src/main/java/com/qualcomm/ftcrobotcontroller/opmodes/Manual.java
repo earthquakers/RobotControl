@@ -14,11 +14,14 @@ import com.qualcomm.robotcore.hardware.DcMotor;
  */
 public class Manual extends OpMode {
 
-    // FrontLeft, FrontRight, RearLeft, RearRight
-	protected DcMotor FL, FR, RL, RR;
+    // FrontLeft, FrontRight, RearLeft, RearRight, Flipper
+	protected DcMotor FL, FR, RL, RR, Flipper;
 
-	protected final boolean reversed = false;
-	protected final double gearfactor  = 0.5;
+	private final double STEER_SENS = 0.78;
+	private final double GEAR_FACTOR = 0.5;
+	private final double FLIPPER_SPEED = 0.8;
+
+	private boolean flipperPressed;
 
 	@Override
 	public void init(){
@@ -26,146 +29,73 @@ public class Manual extends OpMode {
 		FR = hardwareMap.dcMotor.get("fr");
 		RL = hardwareMap.dcMotor.get("rl");
 		RR = hardwareMap.dcMotor.get("rr");
+
+		Flipper = hardwareMap.dcMotor.get("flipper");
 	}
 
 	@Override
 	public void loop(){
 		double gas, steer;
-		boolean gear;
+		boolean gear, flippererer;
 
+		// gamepad1 - The drivers controller
 		gas = gamepad1.left_stick_y;
 		steer = gamepad1.right_stick_x;
 		gear = gamepad1.left_stick_button;
 
-		motorControlNew(steer, gas, gear);
+		// gamepad2 - The controllers controller
+		flippererer = gamepad2.a;
+
+		motorControl(steer, gas, gear);
+
+		if(flippererer)
+			toggleFlipperControl();
+
 	}
 
-	/**
-	 * This is where the magic happens
-	 * @param steering The angle, has to be between -1.0 and 1.0
-	 * @param throttle The power, between -1.0 and 1.0
-	 * @param motorFactor Undefined behaviour???? Nobody knows...
-	 */
-	@Deprecated // Apologies
-	public void motorControl(double steering, double throttle, double motorFactor, boolean gearing) {
-		double motorFL, motorFR, motorRL, motorRR = 0.0;
-		boolean reversedThrottle = false;
-
-		//Throttle is reversed so robot needs reveresed
-		//For easy calcualtions use throttle always absolute and change afterwards
-		if (throttle < 0.0f)
-		{
-			reversedThrottle = true;
-			throttle = Math.abs(throttle);
+	protected void toggleFlipperControl(){
+		if(flipperPressed){
+			this.Flipper.setPower(FLIPPER_SPEED);
+			this.flipperPressed = false;
+		}else{
+			this.Flipper.setPower(0.0);
+			this.flipperPressed = true;
 		}
-
-		if(!gearing)
-			throttle *= Constants.SPEEDFACTOR;
-
-		//First of check the steering direction
-		if(steering > 0.0f) //Steering direction is left?
-		{
-			if(throttle == 0.0f){
-				steering *= motorFactor;
-			}
-
-			//Motors on left turn slower than right to change direction
-			motorFL = (throttle * motorFactor) * ( 1.0 - Math.abs(steering));
-			motorRL = (throttle * motorFactor) * ( 1.0 - Math.abs(steering));
-
-			//Motors on right stay at speed of throttle
-			motorFR = (throttle * motorFactor) * ( 1.0 + Math.abs(steering));
-			motorRR = (throttle * motorFactor) * ( 1.0 + Math.abs(steering));
-		}
-		else if (steering < 0.0f) //Steering direction is right
-		{
-			if(throttle == 0.0f){
-				steering *= motorFactor;
-			}
-
-			//Motors on right turn slower than left to change direction
-			motorFR = (throttle * motorFactor) * ( 1.0 - Math.abs(steering));
-			motorRR = (throttle * motorFactor) * ( 1.0 - Math.abs(steering));
-
-			//Motors on right stay at speed of throttle
-			motorFL = (throttle * motorFactor) * ( 1.0 + Math.abs(steering));
-			motorRL = (throttle * motorFactor) * ( 1.0 + Math.abs(steering));
-		}
-		else	//Steering direction is zero so robot moves forward
-		{
-			motorFL = (throttle * motorFactor);
-			motorFR = (throttle * motorFactor);
-			motorRL = (throttle * motorFactor);
-			motorRR = (throttle * motorFactor);
-		}
-
-		if(reversedThrottle)
-		{
-			motorFL = motorFL * (-1.0);
-			motorFR = motorFR * (-1.0);
-			motorRL = motorRL * (-1.0);
-			motorRR = motorRR * (-1.0);
-		}
-
-		telemetry.addData("~", String.format("%f, %f, %f, %f, %f, %f", motorFL, motorFR, motorRL, motorRR, steering, throttle));
-
-		// Double check
-		motorFL = Math.min(Math.max(motorFL, -1.0), 1.0);
-		motorFR = Math.min(Math.max(motorFR, -1.0), 1.0);
-		motorRL = Math.min(Math.max(motorRL, -1.0), 1.0);
-		motorRR = Math.min(Math.max(motorRR, -1.0), 1.0);
-
-
-
-
-		// Another one
-		this.FL.setPower(motorFL);
-
-		// Another one
-		this.FR.setPower(-motorFR);
-
-		// Another one
-		this.RL.setPower(motorRL);
-
-		// Another one
-		this.RR.setPower(-motorRR);
 	}
 
-	public void motorControlNew(double power, double steering, boolean gearing){
-		double motorFL, motorFR, motorRL, motorRR;
-		double leftPower, rightPower;
+	protected void motorControl(double powerIn, double steeringIn, boolean gearing){
+		double steeringReal, powerReal;
 
-		if(!gearing)
-			power *= this.gearfactor;
+		double fl, rl, fr, rr;
 
-		if(this.reversed)
-			leftPower = power - steering;
-		else
-			leftPower = power + steering;
+		steeringReal = steeringIn *= this.STEER_SENS;
 
-		if(this.reversed)
-			rightPower = power + steering;
-		else
-			rightPower = power - steering;
+		powerReal = gearing ? powerIn : powerIn * this.GEAR_FACTOR;
 
-		motorFL = leftPower;
-		motorRL = leftPower;
+		if(powerReal == 0.0) {
+			fl = -steeringReal;
+			rl = -steeringReal;
+			fr = steeringReal;
+			rr = steeringReal;
+		}else{
+			fl = powerReal + steeringReal;
+			rl = powerReal + steeringReal;
+			fr = powerReal - steeringReal;
+			rr = powerReal - steeringReal;
+		}
 
-		motorFR = rightPower;
-		motorRR = rightPower;
+		fl = fixBoundaries(fl);
+		rl = fixBoundaries(rl);
+		fr = fixBoundaries(fr);
+		rr = fixBoundaries(rr);
 
-		telemetry.addData("~", String.format("%g, %g", leftPower, rightPower));
+		this.FL.setPower(fl);
+		this.RL.setPower(rl);
+		this.FR.setPower(fr);
+		this.RR.setPower(rr);
+	}
 
-		// Make sure the values don't exceed 1.0 or go below -1.0
-		motorFL = Math.min(Math.max(motorFL, -1.0), 1.0);
-		motorFR = Math.min(Math.max(motorFR, -1.0), 1.0);
-		motorRL = Math.min(Math.max(motorRL, -1.0), 1.0);
-		motorRR = Math.min(Math.max(motorRR, -1.0), 1.0);
-
-		// Assign the values
-		this.FL.setPower(motorFL);
-		this.FR.setPower(motorFR);
-		this.RL.setPower(motorRL);
-		this.RR.setPower(motorRR);
+	private double fixBoundaries(double in){
+		return Math.max(Math.min(in, 1.0), -1.0);
 	}
 }
